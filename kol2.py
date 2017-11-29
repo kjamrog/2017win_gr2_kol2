@@ -14,128 +14,147 @@
 # data in text files (YAML, JSON).
 # If you have even more courage, try implementing user interface.
 
+import sys
 import random
+import json
+from optparse import OptionParser
 
 
-class Student(object):
-    def __init__(self, first_name, last_name):
-        self.first_name = first_name
-        self.last_name = last_name
+def generate_student_data(first_name, last_name, birth_date):
+    return {
+        'personal_info': {'first_name': first_name, 'last_name': last_name, 'birth_data': birth_date},
+        'classes': {}
+    }
 
 
-class ClassMember(Student):
-    def __init__(self, student, number):
-        super(ClassMember, self).__init__(student.first_name, student.last_name)
-        self.number = number
-        self.attendance = {}
-        self.scores = []
-
-    def __str__(self):
-        return '{0}: {1} {2}'.format(self.number, self.first_name, self.last_name)
-
-    def save_presence(self, date, presence):
-        self.attendance[date] = presence
-
-    def add_score(self, score):
-        self.scores.append(score)
-
-    def get_average_score(self):
-        return float(sum(self.scores)) / len(self.scores)
-
-    def get_scores(self):
-        return self.scores
-
-    def count_attendance(self):
-        result = {
-            'presences': 0,
-            'absences': 0
+def assign_student_to_class(data_dict, student_number, class_name):
+    if student_number in data_dict:
+        data_dict[student_number]['classes'][class_name] = {
+            'grades': [],
+            'attendance': {}
         }
-        for date_key, presence in self.attendance.iteritems():
-            if presence:
-                result['presences'] += 1
-            else:
-                result['absences'] += 1
-        return result
 
 
-class Class(object):
-    def __init__(self, name):
-        self.name = name
-        self.students = []
-
-    def add_student(self, student):
-        class_member = ClassMember(student, self.generate_student_number())
-        self.students.append(class_member)
-
-    def generate_student_number(self):
-        numbers = map(lambda s: s.number, self.students)
-        return max(numbers) + 1 if len(numbers) > 0 else 1
-
-    def save_presence(self, date, presence_dict):
-        for student in self.students:
-            student_presence = presence_dict[student.number] if student.number in presence_dict else False
-            student.save_presence(date, student_presence)
-
-    def get_students_average_score(self):
-        average_scores = map(lambda st: st.get_average_score(), self.students)
-        return float(sum(average_scores)) / len(average_scores)
-
-    def get_students(self):
-        return self.students
-
-    def get_name(self):
-        return self.name
+def generate_student_number(data_dict):
+    return str(int(max(data_dict, key=int))+1) if len(data_dict) > 0 else '1'
 
 
-def get_all_students_average_score(classes):
-    all_students = []
-    for class_object in classes:
-        all_students = all_students + class_object.students
-    average_scores = map(lambda s: s.get_average_score(), all_students)
-    return float(sum(average_scores)) / len(average_scores)
+def save_data_to_json(data, path):
+    with open(path, 'w') as f:
+        json.dump(data, f)
 
 
-def generate_random_presence_dict(students):
-    presence_dict = {}
-    for student in students:
-        presence_dict[student.number] = random.choice([True, False])
-    return presence_dict
+def read_data_from_json(path):
+    with open(path, 'r') as f:
+        return json.load(f)
+
+
+def add_grade_to_student(data_dict, student_number, class_name, grade):
+    data_dict[student_number]['classes'][class_name]['grades'].append(grade)
+
+
+def add_presence_to_student(data_dict, student_number, class_name, date, present):
+    data_dict[student_number]['classes'][class_name]['attendance'][date] = present
+
+
+def calculate_average_score_in_class(data_dict, student_number, class_name):
+    grades = data_dict[student_number]['classes'][class_name]['grades']
+    return float(sum(grades)) / len(grades) if len(grades) > 0 else 0.0
+
+
+def calculate_average_score(data_dict, student_number):
+    avg_scores = []
+    for class_name in data_dict[student_number]['classes']:
+        avg_scores.append(calculate_average_score_in_class(data_dict, student_number, class_name))
+    return float(sum(avg_scores)) / len(avg_scores)
+
+
+def count_total_attendance(data_dict, student_number):
+    result = {'presences': 0, 'absences': 0}
+    for class_name, class_data in data_dict[student_number]['classes'].iteritems():
+        for date, present in class_data['attendance'].iteritems():
+            key_to_increment = 'presences' if present else 'absences'
+            result[key_to_increment] += 1
+    return result
 
 
 if __name__ == '__main__':
 
-    test_class = Class('test class')
+    parser = OptionParser()
+    parser.add_option('-s', '--simulation', dest='run_simulation', default=False, action="store_true", help='Specifies whether to run simulation or not')
+    parser.add_option('-i', '--input', dest='input_path', type="string", help='Path to file from which data should be loaded. Used only if simulation is disabled')
+    parser.add_option('-o', '--output', dest='output_path', type="string", help='Path to which results of the simulation will be saved. Used only if simulation is enabled')
 
-    first_student = Student('Jan', 'Nowak')
-    second_student = Student('Andrzej', 'Kowalski')
-    third_student = Student('Jan', 'Kowalski')
+    (options, args) = parser.parse_args()
 
-    test_class.add_student(first_student)
-    test_class.add_student(second_student)
-    test_class.add_student(third_student)
+    if options.run_simulation:
 
-    date = '2017-11-20'
-    test_class.save_presence(date, generate_random_presence_dict(test_class.get_students()))
+        print('\nSimulation:\n')
 
-    date = '2017-11-21'
-    test_class.save_presence(date, generate_random_presence_dict(test_class.get_students()))
+        students = dict()
 
-    date = '2017-11-22'
-    test_class.save_presence(date, generate_random_presence_dict(test_class.get_students()))
+        first_student_number = generate_student_number(students)
+        students[first_student_number] = generate_student_data('Jan', 'Nowak', '19.02.2000')
 
-    for st in test_class.get_students():
-        st.add_score(random.randint(1, 5))
-        st.add_score(random.randint(1, 5))
-        st.add_score(random.randint(1, 5))
+        second_student_number = generate_student_number(students)
+        students[second_student_number] = generate_student_data('Andrzej', 'Kowalski', '05.04.2000')
 
-    print('\nClass name: {}\n'.format(test_class.get_name()))
+        first_class_name = 'First class'
+        second_class_name = 'Second class'
 
-    for st in test_class.get_students():
-        print(st)
-        print('Attendance: {}'.format(st.count_attendance()))
-        print('Scores: {}'.format(st.get_scores()))
-        print('Average score: {}'.format(st.get_average_score()))
+        assign_student_to_class(students, first_student_number, first_class_name)
+        assign_student_to_class(students, first_student_number, second_class_name)
+        assign_student_to_class(students, second_student_number, first_class_name)
+        assign_student_to_class(students, second_student_number, second_class_name)
+
+        add_grade_to_student(students, first_student_number, first_class_name, random.randint(1, 5))
+        add_grade_to_student(students, first_student_number, first_class_name, random.randint(1, 5))
+
+        add_grade_to_student(students, first_student_number, second_class_name, random.randint(1, 5))
+        add_grade_to_student(students, first_student_number, second_class_name, random.randint(1, 5))
+
+        add_grade_to_student(students, second_student_number, first_class_name, random.randint(1, 5))
+        add_grade_to_student(students, second_student_number, first_class_name, random.randint(1, 5))
+
+        add_grade_to_student(students, second_student_number, second_class_name, random.randint(1, 5))
+        add_grade_to_student(students, second_student_number, second_class_name, random.randint(1, 5))
+
+        date = '12.11.2017'
+        add_presence_to_student(students, first_student_number, first_class_name, date, random.choice([True, False]))
+        add_presence_to_student(students, first_student_number, second_class_name, date, random.choice([True, False]))
+        add_presence_to_student(students, second_student_number, first_class_name, date, random.choice([True, False]))
+        add_presence_to_student(students, second_student_number, second_class_name, date, random.choice([True, False]))
+
+        date = '21.11.2017'
+        add_presence_to_student(students, first_student_number, first_class_name, date, random.choice([True, False]))
+        add_presence_to_student(students, first_student_number, second_class_name, date, random.choice([True, False]))
+        add_presence_to_student(students, second_student_number, first_class_name, date, random.choice([True, False]))
+        add_presence_to_student(students, second_student_number, second_class_name, date, random.choice([True, False]))
+
+        if options.output_path:
+            save_data_to_json(students, options.output_path)
+            print('Simulation data saved in: {}'.format(options.output_path))
+
+    elif options.input_path:
+        students = read_data_from_json(options.input_path)
+        print('\nData from file {}\n'.format(options.input_path))
+
+    else:
+        print('Neither simulation nor input option provided')
+        sys.exit()
+
+    for student_number, data in students.iteritems():
+        personal_info = data['personal_info']
+        total_avg_score = calculate_average_score(students, student_number)
+        student_classes = data['classes'].keys()
+        class_name = student_classes[0] if len(student_classes) > 0 else None
+        if class_name:
+            avg_score_in_class = calculate_average_score_in_class(students, student_number, class_name)
+        attendance = count_total_attendance(students, student_number)
+
+        print('Student {}: {} {}'.format(student_number, personal_info['first_name'], personal_info['last_name']))
+        print('Average score across classes: {}'.format(total_avg_score))
+        if class_name:
+            print('Average score in class "{}": {}'.format(class_name, avg_score_in_class))
+        print('Total attendance: {}'.format(attendance))
         print('\n')
-
-    print('Class average score: {}'.format(test_class.get_students_average_score()))
-
